@@ -8,9 +8,6 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <style>
 :root{
   --navy:#0d2440; --navy-2:#163657; --sun:#e8833a; --sun-2:#f3a55f; --sand:#f7f1e7; --sand-2:#efe5d4;
@@ -292,11 +289,13 @@ footer b{color:#fff}
     </a>
     <nav class="tabs">
       <a href="#reserver" data-route="reserver">Réserver</a>
+      <a href="https://claude.ai/artifact/8WJo3Ba2poTncoQLj41Bgm" target="_blank" rel="noopener" class="agency" id="tabAgence" hidden>Espace agence ↗</a>
     </nav>
   </div>
 </header>
 
 <!-- ===================== CLIENT : RÉSERVATION ===================== -->
+<div id="previewNote" hidden style="background:#fff1e5;color:#7a4a14;border-bottom:1px solid #f1d3ad;padding:10px 20px;text-align:center;font-size:14px;font-weight:600">Aperçu de l'agence sur Claude : d'ici, les demandes ne peuvent pas partir automatiquement. Testez et partagez le site hébergé sur Netlify.</div>
 <main id="viewReserver">
   <section class="hero">
     <svg class="scene" aria-hidden="true"><use href="#scene" width="100%" height="100%"/></svg>
@@ -339,15 +338,11 @@ footer b{color:#fff}
         <div class="field"><label for="classe">Classe</label>
           <select id="classe"><option>Économique</option><option>Économique Premium</option><option>Affaires</option><option>Première</option></select></div>
       </div>
-      <div class="grid g-3" style="margin-top:14px">
+      <div class="grid g-2" style="margin-top:14px;align-items:end">
         <div class="field"><label for="compagnie">Compagnie souhaitée (facultatif)</label>
           <input id="compagnie" list="airlines" placeholder="Peu importe"></div>
-        <div class="field"><label for="bagages">Bagages</label>
-          <select id="bagages"><option>Bagage standard inclus</option><option>Bagage cabine seulement</option><option>Bagage supplémentaire</option></select></div>
-        <div class="field"><label for="budget">Budget indicatif (facultatif)</label>
-          <input id="budget" placeholder="ex. 8 000 000 GNF ou 900 €"></div>
+        <label class="check"><input type="checkbox" id="flex"> Mes dates sont flexibles (± 3 jours) — pour trouver un meilleur prix</label>
       </div>
-      <label class="check"><input type="checkbox" id="flex"> Mes dates sont flexibles (± 3 jours) — pour trouver un meilleur prix</label>
 
       <div class="section-title">Vos coordonnées</div>
       <div class="grid g-3">
@@ -498,39 +493,6 @@ const AGENCE = {
   // Après activation, vous pouvez remplacer l'adresse par le code reçu de FormSubmit.
   formEndpoint: "https://formsubmit.co/ajax/africavisionvoyage@gmail.com"
 };
-
-/* ============ LIAISON AVEC LA PLATEFORME AGENCE (Firebase) ============
-   Les demandes envoyées ici arrivent directement dans l'Espace agence.
-   L'e-mail reste envoyé en parallèle : il sert d'alerte et de secours. */
-const firebaseConfig = {
-  apiKey: "AIzaSyDg_-yy_CO-UV6pn8fEuWTRqsC31PEHDdo",
-  authDomain: "agence-a10a1.firebaseapp.com",
-  projectId: "agence-a10a1",
-  storageBucket: "agence-a10a1.firebasestorage.app",
-  messagingSenderId: "221270391792",
-  appId: "1:221270391792:web:dfe48e91a2899be58d3b35"
-};
-const AGENCE_ID = "africa-vision-voyage";
-firebase.initializeApp(firebaseConfig);
-const fbAuth = firebase.auth();
-const fbStore = firebase.firestore();
-const ROOT = fbStore.collection("agences").doc(AGENCE_ID);
-const DB = { collection: n => ROOT.collection(n), doc: p => { const [c,d] = p.split("/"); return ROOT.collection(c).doc(d); } };
-
-/* Le visiteur est authentifié de façon anonyme : il peut déposer une demande,
-   mais ne peut ni lire ni modifier les dossiers de l'agence. */
-let authReady = null;
-function ensureAuth(){
-  if (authReady) return authReady;
-  authReady = new Promise((resolve, reject) => {
-    const stop = fbAuth.onAuthStateChanged(u => {
-      stop();
-      if (u) resolve(u);
-      else fbAuth.signInAnonymously().then(c => resolve(c.user)).catch(reject);
-    }, reject);
-  });
-  return authReady;
-}
 
 const AIRPORTS = [
  ["Conakry","CKY","Guinée"],["Dakar","DSS","Sénégal"],["Abidjan","ABJ","Côte d'Ivoire"],["Bamako","BKO","Mali"],
@@ -683,9 +645,7 @@ function buildRequest(ref){
   if (t==="aller-retour") L.push(`Retour : ${segs[0].to.trim()} → ${segs[0].from.trim()} le ${frDate(segs[0].ret)}`);
   L.push(`Passagers : ${pax.adultes} adulte(s), ${pax.enfants} enfant(s), ${pax.bebes} bébé(s)`);
   L.push(`Classe : ${$("#classe").value}`);
-  L.push(`Bagages : ${$("#bagages").value}`);
   if ($("#compagnie").value.trim()) L.push(`Compagnie souhaitée : ${$("#compagnie").value.trim()}`);
-  if ($("#budget").value.trim()) L.push(`Budget indicatif : ${$("#budget").value.trim()}`);
   L.push(`Dates flexibles : ${$("#flex").checked?"Oui (± 3 jours)":"Non"}`);
   L.push(`Nom : ${$("#nom").value.trim()}`);
   L.push(`Téléphone / WhatsApp : ${$("#tel").value.trim()}`);
@@ -711,34 +671,7 @@ function setSentUI(sent){
 }
 function b64url(str){ const b=new TextEncoder().encode(str); let bin=""; b.forEach(x=>bin+=String.fromCharCode(x)); return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 
-/* --- 1) Dépôt direct du dossier dans la plateforme agence --- */
-function dossierId(ref){ return String(ref).replace(/[^A-Za-z0-9_-]/g,"").slice(0,60); }
-function dossierBody(ref){
-  const now = new Date().toISOString();
-  return {
-    ref,
-    nom: $("#nom").value.trim(),
-    tel: $("#tel").value.trim(),
-    email: $("#email").value.trim(),
-    demande: currentReq,
-    statut: "nouvelle",
-    devise: "GNF",
-    paiement: "Non payé",
-    recu: now, maj: now,
-    source: "site"
-  };
-}
-async function saveToAgency(ref){
-  try {
-    await ensureAuth();
-    const write = DB.collection("dossiers").doc(dossierId(ref)).set(dossierBody(ref));
-    await Promise.race([write, new Promise((_,rej) => setTimeout(() => rej(new Error("timeout")), 12000))]);
-    return true;
-  } catch(e){ console.warn("Dépôt du dossier impossible :", (e && (e.code || e.message)) || e); return false; }
-}
-
-/* --- 2) Alerte e-mail (notification de l'agence + secours hors-ligne) --- */
-async function sendByMail(ref){
+async function sendToAgency(ref){
   if (!AGENCE.formEndpoint) return false;
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
   try {
@@ -764,13 +697,6 @@ async function sendByMail(ref){
     return false;
   } catch(e){ return false; }
   finally { clearTimeout(t); }
-}
-
-/* --- 3) Envoi complet : le dossier d'abord, l'e-mail ensuite --- */
-async function sendToAgency(ref){
-  const saved = await saveToAgency(ref);
-  if (saved){ sendByMail(ref); return true; }   // alerte e-mail en arrière-plan
-  return await sendByMail(ref);                 // dépôt impossible : l'e-mail prend le relais
 }
 
 let sending = false, lastRef = "";
@@ -827,7 +753,18 @@ showView("reserver");
 /* ============ ESPACE AGENCE (propriétaire uniquement) ============ */
 let db = null, dossiers = [], filter = "tous", unsub = null, editing = null;
 
-route();   // site public : uniquement la réservation
+(async () => {
+  try {
+    const user = await claude.use("user");
+    isAgent = !!(user && (user.isOwner() || user.canEdit()));
+    if (isAgent){
+      $("#tabAgence").hidden = false;
+      $("#previewNote").hidden = false;
+      db = await claude.use("db");
+    }
+  } catch(e){ isAgent = false; }
+  route();
+})();
 
 function startAgency(){
   if (unsub !== null) return;
