@@ -384,13 +384,12 @@ body{line-height:1.38}
     <nav class="tabs">
       <a href="#reserver" data-route="reserver">Billet d'avion</a>
       <a href="#hotel" data-route="hotel">Hôtel</a>
-      <a href="https://claude.ai/artifact/8WJo3Ba2poTncoQLj41Bgm" target="_blank" rel="noopener" class="agency" id="tabAgence" hidden>Espace agence ↗</a>
+      <a href="https://africavision140.github.io/GESTION-BILLET/" target="_blank" rel="noopener" class="agency" id="tabAgence" hidden>Espace agence ↗</a>
     </nav>
   </div>
 </header>
 
 <!-- ===================== CLIENT : RÉSERVATION ===================== -->
-<div id="previewNote" hidden style="background:#fff1e5;color:#7a4a14;border-bottom:1px solid #f1d3ad;padding:10px 20px;text-align:center;font-size:14px;font-weight:600">Aperçu de l'agence sur Claude : d'ici, les demandes ne peuvent pas partir automatiquement. Testez et partagez le site hébergé sur Netlify.</div>
 <main id="viewReserver">
   <section class="hero">
     <svg class="scene" aria-hidden="true"><use href="#scene" width="100%" height="100%"/></svg>
@@ -627,21 +626,44 @@ body{line-height:1.38}
 <datalist id="airlines"></datalist>
 <datalist id="cities"></datalist>
 
+<!-- ============ FIREBASE (SDK compat) ============ -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
 <script>
 /* ============ CONFIGURATION DE L'AGENCE ============ */
 const AGENCE = {
   nom: "AFRICA VISION VOYAGE",
   email: "africavisionvoyage@gmail.com",
   whatsapp: "224614645454", // numéro au format international sans + ni espaces
-  // Envoi automatique des demandes par e-mail (FormSubmit, gratuit).
-  // Après activation, vous pouvez remplacer l'adresse par le code reçu de FormSubmit.
-  formEndpoint: "https://formsubmit.co/ajax/africavisionvoyage@gmail.com"
+  // Notification e-mail de secours (FormSubmit). La demande est d'abord
+  // enregistrée dans Firestore ; cet e-mail sert juste d'alerte.
+  formEndpoint: "https://formsubmit.co/ajax/africavisionvoyage@gmail.com",
+  // Lien vers la plateforme de gestion (espace agence)
+  urlAgence: "https://africavision140.github.io/GESTION-BILLET/"
 };
 
+/* ============ FIREBASE ============
+   Même projet que l'Espace agence : c'est ce qui fait communiquer les deux. */
+const firebaseConfig = {
+  apiKey: "AIzaSyAyRoGU06Lefp75Q2MhUD3S2slFfO3Zekk",
+  authDomain: "gestion-billet-et-reservation.firebaseapp.com",
+  projectId: "gestion-billet-et-reservation",
+  storageBucket: "gestion-billet-et-reservation.firebasestorage.app",
+  messagingSenderId: "170045165144",
+  appId: "1:170045165144:web:a7960d04cf98a02160042d"
+};
+let db = null;
+try {
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+} catch(e){ db = null; }
+
 /* ============ OFFRES PROMO ============
-   Gérées depuis l'Espace agence (onglet Promos → « Mettre à jour le site »).
+   Lues en direct depuis la collection « promos » de Firestore :
+   dès que l'agence en ajoute une, elle apparaît ici sans rien ré-uploader.
    Une offre disparaît toute seule après sa date « jusquAu ». */
-/*PROMOS:DEBUT*/const PROMOS = [];/*PROMOS:FIN*/
+let PROMOS = [];
 const AIRPORTS = [
  ["Conakry","CKY","Guinée"],["Dakar","DSS","Sénégal"],["Abidjan","ABJ","Côte d'Ivoire"],["Bamako","BKO","Mali"],
  ["Freetown","FNA","Sierra Leone"],["Monrovia","ROB","Liberia"],["Bissau","OXB","Guinée-Bissau"],["Banjul","BJL","Gambie"],
@@ -847,6 +869,42 @@ function setSentUI(sent){
 }
 function b64url(str){ const b=new TextEncoder().encode(str); let bin=""; b.forEach(x=>bin+=String.fromCharCode(x)); return btoa(bin).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
 
+/* ---- Canal principal : la demande est écrite directement dans Firestore,
+   elle apparaît aussitôt dans l'Espace agence. ---- */
+const refsTentees = new Set();
+async function saveDemande(ref){
+  if (!db) return false;
+  const dejaTentee = refsTentees.has(ref);
+  refsTentees.add(ref);
+  const body = {
+    ref,
+    nom: $("#nom").value.trim(),
+    tel: $("#tel").value.trim(),
+    email: $("#email").value.trim(),
+    demande: currentReq,
+    statut: "nouvelle",
+    devise: "GNF",
+    paiement: "Non payé",
+    montant: "", cie: "", validite: "", vols: "", pnr: "", notes: "",
+    service: service === "hotel" ? "hotel" : "vol",
+    source: "site",
+    recu: new Date().toISOString(),
+    maj: new Date().toISOString()
+  };
+  try {
+    await Promise.race([
+      db.collection("dossiers").doc(ref).set(body),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 12000))
+    ]);
+    return true;
+  } catch(e){
+    // Refus de permission au 2e essai = le 1er a finalement abouti
+    if (dejaTentee && e && e.code === "permission-denied") return true;
+    return false;
+  }
+}
+
+/* ---- Canal secondaire : alerte e-mail à l'agence (sans blocage) ---- */
 async function sendToAgency(ref){
   if (!AGENCE.formEndpoint) return false;
   const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 12000);
@@ -903,8 +961,9 @@ $("#bookingForm").addEventListener("submit", async e => {
   if (AGENCE.whatsapp){ $("#sendWa").hidden=false; $("#sendWa").href = `https://wa.me/${AGENCE.whatsapp}?text=${encodeURIComponent(currentReq)}`; }
   const btn = $("#bookingForm button[type=submit]"), label = btn.innerHTML;
   sending = true; btn.disabled = true; btn.textContent = "Envoi en cours…";
-  let sent = await sendToAgency(ref);
-  if (!sent) { await new Promise(r=>setTimeout(r,1500)); sent = await sendToAgency(ref); }
+  let sent = await saveDemande(ref);
+  if (!sent) { await new Promise(r=>setTimeout(r,1500)); sent = await saveDemande(ref); }
+  sendToAgency(ref).catch(() => {});   // alerte e-mail, sans bloquer le client
   lastRef = ref;
   sending = false; btn.disabled = false; btn.innerHTML = label;
   setSentUI(sent);
@@ -913,7 +972,8 @@ $("#bookingForm").addEventListener("submit", async e => {
 $("#copyReq").addEventListener("click", () => copyText(currentReq));
 $("#retrySend").addEventListener("click", async () => {
   const b=$("#retrySend"); if (b.disabled) return; b.disabled=true; b.textContent="Envoi en cours…";
-  const ok = await sendToAgency(lastRef); b.disabled=false; b.textContent="↻ Réessayer l'envoi";
+  const ok = await saveDemande(lastRef); if (ok) sendToAgency(lastRef).catch(()=>{});
+  b.disabled=false; b.textContent="↻ Réessayer l'envoi";
   setSentUI(ok); if(!ok) toast("Toujours pas envoyé — essayez WhatsApp");
 });
 $("#editReq").addEventListener("click", () => { showView("reserver"); });
@@ -976,7 +1036,7 @@ renderSegs(); renderPax();
 let chosenPromo = null;
 const apName = code => { const a = AIRPORTS.find(x => x[1] === code); return a ? `${a[0]} (${a[1]})` : code; };
 const apCity = code => { const a = AIRPORTS.find(x => x[1] === code); return a ? a[0].replace(/ (Charles-de-Gaulle|Orly|Heathrow|JFK|Dulles)$/,"") : code; };
-function activePromos(){ const t = today(); return PROMOS.filter(p => p && p.de && p.vers && (!p.jusquAu || p.jusquAu >= t)); }
+function activePromos(){ const t = today(); return PROMOS.filter(p => p && p.de && p.vers && p.actif !== false && (!p.jusquAu || p.jusquAu >= t)); }
 function renderPromos(){
   const list = activePromos();
   $("#promos").hidden = false; $("#kickerPromo").hidden = !list.length;
@@ -1021,6 +1081,15 @@ $("#promoGrid").addEventListener("click", e => {
 $("#promoClear").addEventListener("click", () => { chosenPromo = null; $("#promoChosen").hidden = true; });
 renderPromos();
 
+/* Les promos sont lues en direct : toute modification faite dans l'Espace
+   agence apparaît ici en quelques secondes, sans republier le site. */
+if (db) {
+  db.collection("promos").onSnapshot(snap => {
+    PROMOS = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderPromos();
+  }, () => { /* lecture impossible : on garde l'affichage « bientôt » */ });
+}
+
 /* ============ NAVIGATION ============ */
 let isAgent = false;
 function showView(v){
@@ -1038,21 +1107,15 @@ function route(){
 window.addEventListener("hashchange", () => { route(); if(!$("#viewReserver").hidden) window.scrollTo(0,0); });
 showView("reserver"); route();
 
-/* ============ ESPACE AGENCE (propriétaire uniquement) ============ */
-let db = null, dossiers = [], filter = "tous", unsub = null, editing = null;
+/* ============ ESPACE AGENCE ============
+   La gestion des dossiers se fait désormais sur la plateforme dédiée
+   (AGENCE.urlAgence). Le code ci-dessous reste en place pour mémoire mais
+   n'est pas accessible depuis le site public. */
+let dossiers = [], filter = "tous", unsub = null, editing = null;
 
-(async () => {
-  try {
-    const user = await claude.use("user");
-    isAgent = !!(user && (user.isOwner() || user.canEdit()));
-    if (isAgent){
-      $("#tabAgence").hidden = false;
-      $("#previewNote").hidden = false;
-      db = await claude.use("db");
-    }
-  } catch(e){ isAgent = false; }
-  route();
-})();
+$("#tabAgence").href = AGENCE.urlAgence;
+$("#tabAgence").hidden = false;
+route();
 
 function startAgency(){
   if (unsub !== null) return;
