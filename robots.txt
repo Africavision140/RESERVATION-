@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://africavisionvoyages.com/sitemap.xml
